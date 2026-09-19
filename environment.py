@@ -27,6 +27,18 @@ class Environment:
 
         self.hazard_spread_interval = HAZARD_SPREAD_INTERVAL
 
+                # -----------------------------
+        # Robot's world model / memory
+        # -----------------------------
+
+        self.known_cells = {}
+
+        self.known_survivors = {}
+
+        self.known_hazards = set()
+
+        self.known_obstacles = set()
+
         # Start first episode
         self.reset()
 
@@ -55,6 +67,12 @@ class Environment:
         self.rescued_survivors = set()
         self.lost_survivors = set()
 
+                # Reset robot's world model / memory
+        self.known_cells = {}
+        self.known_survivors = {}
+        self.known_hazards = set()
+        self.known_obstacles = set()
+
         # Robot battery
         self.battery = self.max_battery
 
@@ -63,6 +81,8 @@ class Environment:
 
         # Generate new disaster
         self.generate_environment()
+
+        self.update_world_model()
 
         return self.get_state()
 
@@ -267,6 +287,117 @@ class Environment:
 
         return True, False, entered_hazard
 
+
+        # ==================================================
+    # GET 3x3 LOCAL SENSOR OBSERVATION
+    # ==================================================
+
+    def get_local_observation(self):
+
+        row, col = self.robot
+
+        observation = []
+
+        # Check 3x3 area around robot
+        for r in range(row - 1, row + 2):
+
+            row_observation = []
+
+            for c in range(col - 1, col + 2):
+
+                cell = (r, c)
+
+                # Outside the grid
+                if (
+                    r < 0
+                    or r >= self.rows
+                    or c < 0
+                    or c >= self.cols
+                ):
+                    row_observation.append(1)
+                    continue
+
+                # Robot
+                if cell == self.robot:
+                    row_observation.append(4)
+
+                # Obstacle
+                elif cell in self.obstacles:
+                    row_observation.append(1)
+
+                # Hazard
+                elif cell in self.hazards:
+                    row_observation.append(2)
+
+                # Survivor
+                elif cell in self.survivors:
+                    row_observation.append(3)
+
+                # Empty
+                else:
+                    row_observation.append(0)
+
+            observation.append(row_observation)
+
+        return observation
+
+        # ==================================================
+    # UPDATE WORLD MODEL
+    # ==================================================
+
+    def update_world_model(self):
+
+        row, col = self.robot
+
+        # Check the 3x3 area around the robot
+        for r in range(row - 1, row + 2):
+
+            for c in range(col - 1, col + 2):
+
+                # Ignore cells outside the grid
+                if (
+                    r < 0
+                    or r >= self.rows
+                    or c < 0
+                    or c >= self.cols
+                ):
+                    continue
+
+                cell = (r, c)
+
+                # Obstacle
+                if cell in self.obstacles:
+
+                    self.known_cells[cell] = "obstacle"
+                    self.known_obstacles.add(cell)
+
+                # Hazard
+                elif cell in self.hazards:
+
+                    self.known_cells[cell] = "hazard"
+                    self.known_hazards.add(cell)
+
+                # Survivor
+                elif cell in self.survivors:
+
+                    self.known_cells[cell] = "survivor"
+
+                    if cell in self.survivor_health:
+
+                        self.known_survivors[cell] = (
+                            self.survivor_health[cell]
+                        )
+
+                # Robot
+                elif cell == self.robot:
+
+                    self.known_cells[cell] = "robot"
+
+                # Empty
+                else:
+
+                    self.known_cells[cell] = "empty"
+
     # ==================================================
     # UPDATE SURVIVOR HEALTH
     # ==================================================
@@ -460,6 +591,8 @@ class Environment:
 
         moved, hit_obstacle, entered_hazard = self.move_robot(action)
 
+        self.update_world_model()
+
         # -----------------------------
         # Battery decreases
         # -----------------------------
@@ -547,7 +680,7 @@ class Environment:
             done,
             info
         )
-    # ==================================================
+        # ==================================================
     # GET CURRENT STATE
     # ==================================================
 
@@ -555,11 +688,11 @@ class Environment:
 
         return {
 
-            "robot":
-                self.robot,
+            # Robot
+            "robot": self.robot,
 
-            "survivors":
-                self.survivors.copy(),
+            # Actual environment information
+            "survivors": self.survivors.copy(),
 
             "survivor_health":
                 self.survivor_health.copy(),
@@ -576,9 +709,34 @@ class Environment:
             "obstacles":
                 self.obstacles.copy(),
 
+            # Battery
             "battery":
                 self.battery,
 
+            # Episode step
             "steps":
-                self.steps
+                self.steps,
+
+            # -----------------------------
+            # Robot's local 3x3 observation
+            # -----------------------------
+
+            "local_observation":
+                self.get_local_observation(),
+
+            # -----------------------------
+            # Robot's world model / memory
+            # -----------------------------
+
+            "known_cells":
+                self.known_cells.copy(),
+
+            "known_survivors":
+                self.known_survivors.copy(),
+
+            "known_hazards":
+                self.known_hazards.copy(),
+
+            "known_obstacles":
+                self.known_obstacles.copy()
         }
